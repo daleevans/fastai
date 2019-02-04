@@ -92,7 +92,7 @@ def _select_hidden(model, idxs):
 class LanguageLearner(RNNLearner):
     "Subclass of RNNLearner for predictions."
     
-    def predict(self, text:str, n_words:int=1, no_unk:bool=True, temperature:float=1., min_p:float=None):
+    def predict(self, text:str, n_words:int=1, no_unk:bool=True, temperature:float=1., min_p:float=None, sep=' '):
         "Return the `n_words` that come after `text`."
         ds = self.data.single_dl.dataset
         self.model.reset()
@@ -106,7 +106,7 @@ class LanguageLearner(RNNLearner):
             idx = torch.multinomial(res, 1).item()
             new_idx.append(idx)
             xb = xb.new_tensor([idx])[None]
-        return text + self.data.vocab.textify(new_idx)
+        return text + self.data.vocab.textify(new_idx, sep=sep)
     
     def beam_search(self, text:str, n_words:int, top_k:int=10, beam_sz:int=1000, temperature:float=1.):
         ds = self.data.single_dl.dataset
