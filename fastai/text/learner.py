@@ -9,6 +9,7 @@ from ..metrics import accuracy
 from ..train import GradientClipping
 from .models import get_language_model, get_rnn_classifier
 from .transform import *
+from .data import *
 
 __all__ = ['RNNLearner', 'LanguageLearner', 'convert_weights', 'lm_split',
            'rnn_classifier_split', 'language_model_learner', 'text_classifier_learner', 'default_dropout']
@@ -53,7 +54,8 @@ class RNNLearner(Learner):
         self.callbacks.append(RNNTrainer(self, alpha=alpha, beta=beta))
         if clip: self.callback_fns.append(partial(GradientClipping, clip=clip))
         if split_func: self.split(split_func)
-        is_class = (hasattr(self.data.train_ds, 'y') and isinstance(self.data.train_ds.y, CategoryList))
+        is_class = (hasattr(self.data.train_ds, 'y') and (isinstance(self.data.train_ds.y, CategoryList) or 
+                                                          isinstance(self.data.train_ds.y, LMLabelList)))
         self.metrics = ifnone(metrics, ([accuracy] if is_class else []))
 
     def save_encoder(self, name:str):
@@ -88,6 +90,7 @@ class RNNLearner(Learner):
 
 def _select_hidden(model, idxs):
     model[0].hidden = [(h[0][:,idxs,:],h[1][:,idxs,:]) for h in model[0].hidden]
+    model[0].bs = len(idxs)
     
 class LanguageLearner(RNNLearner):
     "Subclass of RNNLearner for predictions."
@@ -96,17 +99,18 @@ class LanguageLearner(RNNLearner):
         "Return the `n_words` that come after `text`."
         ds = self.data.single_dl.dataset
         self.model.reset()
-        xb,_ = self.data.one_item(text)
+        xb,yb = self.data.one_item(text)
         new_idx = []
         for _ in progress_bar(range(n_words), leave=False):
             res = self.pred_batch(batch=(xb,yb))[0][-1]
+            if len(new_idx) == 0: _select_hidden(self.model, [0])
             if no_unk: res[self.data.vocab.stoi[UNK]] = 0.
             if min_p is not None: res[res < min_p] = 0.
             if temperature != 1.: res.pow_(1 / temperature)
             idx = torch.multinomial(res, 1).item()
             new_idx.append(idx)
             xb = xb.new_tensor([idx])[None]
-        return text + self.data.vocab.textify(new_idx, sep=sep)
+        return text + ' '  + self.data.vocab.textify(new_idx, sep=sep)
     
     def beam_search(self, text:str, n_words:int, top_k:int=10, beam_sz:int=1000, temperature:float=1.):
         ds = self.data.single_dl.dataset
